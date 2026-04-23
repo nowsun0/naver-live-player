@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>영상 플레이어</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    :root{--bg:#070910;--surface:#0f1117;--surface2:#161b24;--border:#1e2535;--accent:#00e5a0;--accent2:#3d7eff;--warn:#ffb347;--text:#dde2ed;--muted:#4d5568;--next:#a78bfa}
+    body{background:var(--bg);color:var(--text);font-family:-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+    .header{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
+    .header-title{font-weight:900;font-size:13px}.header-title span{color:var(--accent)}
+    .header-right{display:flex;align-items:center;gap:12px}
+    .header-count{font-size:11px;color:var(--muted);font-family:monospace}
+    .insert-badge{display:none;font-size:10px;font-weight:700;color:var(--warn);background:rgba(255,179,71,0.12);border:1px solid rgba(255,179,71,0.3);padding:3px 8px;border-radius:12px}
+    .main{display:flex;flex:1;overflow:hidden;min-height:0}
+    .video-area{flex:1;display:flex;flex-direction:column;background:#000;position:relative;min-width:0}
+    .video-wrap{flex:1;position:relative;min-height:0}
+    video{position:absolute;inset:0;width:100%;height:100%;background:#000;outline:none;display:none}
+    .empty-state{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;z-index:1}
+    .empty-icon{font-size:48px;opacity:.2}
+    .empty-text{font-size:13px;color:var(--muted);line-height:1.8}
+    .drop-zone{display:flex;flex-direction:column;align-items:center;gap:6px;width:260px;padding:22px;border:2px dashed var(--accent2);border-radius:14px;background:rgba(61,126,255,.05);cursor:pointer;transition:all .2s;user-select:none}
+    .drop-zone:hover,.drop-zone.drag-over{background:rgba(61,126,255,.15);border-color:var(--accent)}
+    .drop-zone-text{font-size:13px;font-weight:700;color:var(--accent2)}
+    .drop-zone-sub{font-size:11px;color:var(--muted)}
+    .controls{background:linear-gradient(transparent,rgba(0,0,0,.92));padding:10px 16px 12px;display:none;flex-direction:column;gap:7px;flex-shrink:0}
+    .progress-wrap{height:4px;background:rgba(255,255,255,.15);border-radius:2px;cursor:pointer}
+    .progress-fill{height:100%;background:var(--accent);border-radius:2px;width:0%;pointer-events:none}
+    .progress-wrap:hover .progress-fill{background:#fff}
+    .ctrl-row{display:flex;align-items:center;gap:8px}
+    .ctrl-btn{background:none;border:none;color:var(--text);cursor:pointer;font-size:16px;padding:4px 6px;border-radius:5px;transition:background .15s}
+    .ctrl-btn:hover{background:rgba(255,255,255,.1)}
+    #btnPlay{width:28px;height:28px;text-align:center;flex-shrink:0;font-size:14px;line-height:1}
+    .vol-wrap{display:flex;align-items:center;gap:6px}
+    input[type=range]{width:75px;height:3px;appearance:none;background:rgba(255,255,255,.2);border-radius:2px;cursor:pointer;outline:none}
+    input[type=range]::-webkit-slider-thumb{appearance:none;width:11px;height:11px;border-radius:50%;background:var(--accent)}
+    .time-disp{font-family:monospace;font-size:11px;color:var(--muted);margin-left:auto}
+    .sidebar{width:300px;flex-shrink:0;display:flex;flex-direction:column;border-left:1px solid var(--border);background:var(--surface)}
+    .sidebar-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+    .sidebar-title{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+    .sidebar-badge{font-size:10px;font-weight:700;font-family:monospace;color:var(--accent)}
+    .pl-wrap{flex:1;overflow-y:auto}
+    .pl-wrap::-webkit-scrollbar{width:3px}
+    .pl-wrap::-webkit-scrollbar-thumb{background:var(--border)}
+    .pl-empty{padding:28px 16px;text-align:center;color:var(--muted);font-size:11px;line-height:1.8}
+    .pl-item{display:flex;align-items:center;gap:9px;padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .12s;border-left:3px solid transparent}
+    .pl-item:hover{background:var(--surface2)}
+    .pl-item.active{background:rgba(0,229,160,.10);border-left-color:var(--accent);padding-left:11px}
+    .pl-item.active .pl-num{color:var(--accent);font-weight:700}
+    .pl-item.active .pl-name{color:var(--accent)}
+    .pl-item.next-up{background:rgba(167,139,250,.07);border-left-color:var(--next);padding-left:11px}
+    .pl-item.next-up .pl-num{color:var(--next)}
+    .pl-item.insert-next{background:rgba(255,179,71,.08);border-left-color:var(--warn);padding-left:11px}
+    .pl-item.insert-next .pl-num{color:var(--warn)}
+    .pl-item.return-after{background:rgba(61,126,255,.07);border-left-color:var(--accent2);padding-left:11px}
+    .pl-item.return-after .pl-num{color:var(--accent2)}
+    .pl-num{font-family:monospace;font-size:10px;color:var(--muted);min-width:22px;text-align:center}
+    .pl-info{flex:1;overflow:hidden}
+    .pl-name{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:color .12s}
+    .pl-dur{font-size:10px;color:var(--muted);margin-top:2px;font-family:monospace}
+    .pl-badge{font-size:9px;font-weight:700;margin-left:4px;padding:1px 4px;border-radius:3px}
+    .badge-active{background:rgba(0,229,160,.15);color:var(--accent)}
+    .badge-next{background:rgba(167,139,250,.15);color:var(--next)}
+    .badge-insert{background:rgba(255,179,71,.15);color:var(--warn)}
+    .badge-return{background:rgba(61,126,255,.15);color:var(--accent2)}
+    .pl-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;padding:3px 6px;border-radius:3px;opacity:0;flex-shrink:0}
+    .pl-item:hover .pl-del{opacity:1}
+    .pl-del:hover{background:#ff4d6a;color:#fff}
+    .legend{padding:7px 12px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0}
+    .lg{display:flex;align-items:center;gap:3px;font-size:9px;color:var(--muted)}
+    .lg-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+    .sidebar-footer{padding:10px 12px;border-top:1px solid var(--border);display:flex;gap:6px;flex-shrink:0}
+    .add-btn{flex:1;padding:8px;background:rgba(61,126,255,.08);border:1px dashed var(--accent2);border-radius:7px;color:var(--accent2);font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;transition:all .2s;font-family:inherit}
+    .add-btn:hover{background:rgba(61,126,255,.18)}
+    .kw-bar{padding:8px 12px;border-top:1px solid var(--border);display:flex;align-items:center;gap:6px;flex-shrink:0;font-size:10px;color:var(--muted)}
+    .kw-bar b{color:var(--accent2)}
+  </style>
+</head>
+<body>
+<div class="header">
+  <div class="header-title">VIDEO <span>PLAYER</span></div>
+  <div class="header-right">
+    <div class="insert-badge" id="insertBadge">⚡ 대기: <span id="insertBadgeName"></span></div>
+    <div class="header-count" id="headerCount">영상을 추가해주세요</div>
+  </div>
+</div>
+<div class="main">
+  <div class="video-area">
+    <div class="video-wrap" id="videoWrap">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">🎬</div>
+        <div class="empty-text">MP4 파일을 추가하거나 드래그&드롭 하세요</div>
+        <div class="drop-zone" id="dropZone">
+          <div class="drop-zone-text">📂 파일 선택</div>
+          <div class="drop-zone-sub">클릭 또는 드래그&드롭</div>
+        </div>
+      </div>
+      <video id="videoA" preload="auto"></video>
+      <video id="videoB" preload="auto"></video>
+    </div>
+    <div class="controls" id="controls">
+      <div class="progress-wrap" id="progressWrap"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="ctrl-row">
+        <button class="ctrl-btn" id="btnPrev">⏮</button>
+        <button class="ctrl-btn" id="btnPlay">▶</button>
+        <button class="ctrl-btn" id="btnNext">⏭</button>
+        <div class="vol-wrap">
+          <button class="ctrl-btn" id="btnMute">🔊</button>
+          <input type="range" id="volSlider" min="0" max="1" step="0.05" value="1">
+        </div>
+        <div class="time-disp" id="timeDisp">0:00 / 0:00</div>
+        <button class="ctrl-btn" id="btnFS">⛶</button>
+      </div>
+    </div>
+  </div>
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-title">플레이리스트</div>
+      <div class="sidebar-badge" id="plCount">0곡</div>
+    </div>
+    <div class="pl-wrap" id="plWrap"><div class="pl-empty">영상을 추가하면 여기에 표시됩니다</div></div>
+    <div class="legend">
+      <div class="lg"><div class="lg-dot" style="background:var(--accent)"></div>재생중</div>
+      <div class="lg"><div class="lg-dot" style="background:var(--next)"></div>다음</div>
+      <div class="lg"><div class="lg-dot" style="background:var(--warn)"></div>문의대응</div>
+      <div class="lg"><div class="lg-dot" style="background:var(--accent2)"></div>복귀예정</div>
+    </div>
+    <div class="sidebar-footer">
+      <button class="add-btn" id="addBtn">＋ 영상 추가</button>
+    </div>
+    <div class="kw-bar">키워드 <b id="kwCount">0</b>개</div>
+  </div>
+</div>
+<script>
+// ── 상태 ─────────────────────────────────────────────────────
+const playlist   = [];
+let currentIdx   = -1;
+let insertQueue  = null;
+let returnToNum  = null;
+let activeSlot   = 0;
+let preloadedIdx = -1;
+let keywordMap   = [];
+const PRELOAD_BEFORE = 4;
+
+const vids       = [document.getElementById('videoA'), document.getElementById('videoB')];
+const emptyState = document.getElementById('emptyState');
+const controls   = document.getElementById('controls');
+
+function av() { return vids[activeSlot]; }
+function sb() { return vids[activeSlot ^ 1]; }
+
+// ── postMessage 수신 (sidepanel → player) ────────────────────
+window.addEventListener('message', (e) => {
+  const msg = e.data;
+  if (!msg || !msg.type) return;
+
+  switch (msg.type) {
+    case 'INIT':
+      // 플레이어 초기화 시 키워드 수신
+      if (Array.isArray(msg.keywordMap)) {
+        keywordMap = msg.keywordMap;
+        updateKwInfo();
+      }
+      break;
+
+    case 'KEYWORD_UPDATE':
+      // 키워드 추가/삭제/CSV 로드 시 업데이트
+      if (Array.isArray(msg.keywordMap)) {
+        keywordMap = msg.keywordMap;
+        updateKwInfo();
+      }
+      break;
+
+    case 'CHAT':
+      // content script에서 온 채팅 → 키워드 매칭
+      if (msg.text) checkKeyword(msg.text);
+      break;
+  }
+});
+
+// ── 로드 완료 → sidepanel에 PLAYER_READY 알림 ────────────────
+window.addEventListener('load', () => {
+  if (window.opener) {
+    try { window.opener.postMessage({ type: 'PLAYER_READY' }, '*'); } catch(e) {}
+  }
+});
+
+function updateKwInfo() {
+  document.getElementById('kwCount').textContent = keywordMap.length;
+}
+
+// ── 키워드 감지 → 끼워넣기 ──────────────────────────────────
+function checkKeyword(text) {
+  if (!playlist.length || !keywordMap.length) return;
+  for (const { keyword, videoKeyword } of keywordMap) {
+    if (!text.toLowerCase().includes(keyword.toLowerCase())) continue;
+    const matched = playlist.findIndex(p =>
+      p.name.toLowerCase().includes(videoKeyword.toLowerCase())
+    );
+    if (matched === -1 || matched === currentIdx) continue;
+    if (insertQueue !== null) continue;
+    insertQueue = matched;
+    document.getElementById('insertBadge').style.display = 'block';
+    document.getElementById('insertBadgeName').textContent = playlist[matched].name;
+    preloadStandby(matched);
+    renderPlaylist();
+    break;
+  }
+}
+
+// ── 파일 열기 ────────────────────────────────────────────────
+// blob URL로 열린 일반 창이므로 input[type=file] 정상 동작
+function openFiles() {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'video/*'; inp.multiple = true;
+  inp.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
+  document.body.appendChild(inp);
+  inp.addEventListener('change', () => {
+    if (inp.files.length) addFiles(inp.files);
+    document.body.removeChild(inp);
+  });
+  inp.click();
+}
+
+document.getElementById('addBtn').addEventListener('click', openFiles);
+document.getElementById('dropZone').addEventListener('click', openFiles);
+document.addEventListener('dragover', e => { e.preventDefault(); document.getElementById('dropZone').classList.add('drag-over'); });
+document.addEventListener('dragleave', e => { if (!e.relatedTarget) document.getElementById('dropZone').classList.remove('drag-over'); });
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  document.getElementById('dropZone').classList.remove('drag-over');
+  if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+});
+
+function addFiles(files) {
+  const valid = Array.from(files).filter(f =>
+    f.type.startsWith('video/') || /\.(mp4|webm|ogg|mov|mkv|m4v)$/i.test(f.name)
+  );
+  if (!valid.length) { alert('지원하지 않는 파일입니다.'); return; }
+  valid.forEach(f => {
+    const m   = f.name.match(/(\d+)/);
+    const num = m ? parseInt(m[1]) : 9999 + playlist.length;
+    playlist.push({ name: f.name, url: URL.createObjectURL(f), dur: '--:--', num });
+  });
+  playlist.sort((a, b) => a.num - b.num);
+  updateHeaderCount();
+  renderPlaylist();
+  if (currentIdx === -1) loadVideo(0);
+}
+
+function updateHeaderCount() {
+  document.getElementById('headerCount').textContent = playlist.length + '개 영상';
+  document.getElementById('plCount').textContent     = playlist.length + '곡';
+}
+
+// ── 더블 버퍼 ────────────────────────────────────────────────
+function preloadStandby(idx) {
+  if (idx === -1 || idx === preloadedIdx || !playlist[idx]) return;
+  preloadedIdx = idx;
+  sb().src = playlist[idx].url;
+  sb().load();
+}
+
+function switchToStandby(newIdx) {
+  const prev = av();
+  activeSlot ^= 1;
+  currentIdx  = newIdx;
+  av().style.display = 'block';
+  av().play().catch(() => {});
+  prev.style.display = 'none';
+  prev.src = '';
+  preloadedIdx = -1;
+  renderPlaylist();
+  schedulePreload();
+}
+
+function loadVideo(idx) {
+  if (idx < 0 || idx >= playlist.length) return;
+  currentIdx = idx;
+  emptyState.style.display = 'none';
+  controls.style.display   = 'flex';
+  const v = av();
+  v.src = playlist[idx].url;
+  v.style.display = 'block';
+  v.load();
+  v.play().catch(() => {});
+  document.title = playlist[idx].name + ' — VIDEO PLAYER';
+  v.onloadedmetadata = () => { playlist[idx].dur = fmt(v.duration); renderPlaylist(); };
+  preloadedIdx = -1;
+  renderPlaylist();
+  schedulePreload();
+}
+
+function schedulePreload() {
+  const nextIdx = insertQueue !== null ? insertQueue : nextByOrder();
+  if (nextIdx !== -1) preloadStandby(nextIdx);
+}
+
+function nextByOrder() {
+  if (!playlist.length) return -1;
+  const curNum = playlist[currentIdx]?.num ?? -1;
+  const nexts  = playlist.filter(p => p.num > curNum);
+  if (nexts.length) {
+    const minNum = Math.min(...nexts.map(p => p.num));
+    return playlist.findIndex(p => p.num === minNum);
+  }
+  return 0;
+}
+
+function onVideoEnded() {
+  if (insertQueue !== null) {
+    const qIdx  = insertQueue;
+    returnToNum = playlist[currentIdx]?.num ?? -1;
+    insertQueue = null;
+    document.getElementById('insertBadge').style.display = 'none';
+    preloadedIdx === qIdx ? switchToStandby(qIdx) : loadVideo(qIdx);
+  } else if (returnToNum !== null) {
+    const rn    = returnToNum;
+    returnToNum = null;
+    const nexts = playlist.filter(p => p.num > rn);
+    const tIdx  = nexts.length
+      ? playlist.findIndex(p => p.num === Math.min(...nexts.map(p => p.num)))
+      : 0;
+    preloadedIdx === tIdx ? switchToStandby(tIdx) : loadVideo(tIdx);
+  } else {
+    const next = nextByOrder();
+    if (next === -1) return;
+    preloadedIdx === next ? switchToStandby(next) : loadVideo(next);
+  }
+}
+
+// ── 컨트롤 ───────────────────────────────────────────────────
+document.getElementById('btnPlay').addEventListener('click', () => {
+  if (currentIdx < 0) return;
+  av().paused ? av().play() : av().pause();
+});
+document.getElementById('btnPrev').addEventListener('click', () => {
+  const curNum = playlist[currentIdx]?.num ?? 9999;
+  const prevs  = playlist.filter(p => p.num < curNum);
+  if (!prevs.length) return;
+  loadVideo(playlist.findIndex(p => p.num === Math.max(...prevs.map(p => p.num))));
+});
+document.getElementById('btnNext').addEventListener('click', () => {
+  returnToNum = null; onVideoEnded();
+});
+document.getElementById('btnMute').addEventListener('click', () => {
+  vids.forEach(v => v.muted = !av().muted);
+  document.getElementById('btnMute').textContent = av().muted ? '🔇' : '🔊';
+});
+document.getElementById('btnFS').addEventListener('click', () => {
+  document.fullscreenElement
+    ? document.exitFullscreen()
+    : document.getElementById('videoWrap').requestFullscreen();
+});
+document.getElementById('volSlider').addEventListener('input', e => {
+  vids.forEach(v => v.volume = parseFloat(e.target.value));
+});
+document.getElementById('progressWrap').addEventListener('click', e => {
+  const v = av(); if (!v.duration) return;
+  const r = e.currentTarget.getBoundingClientRect();
+  v.currentTime = (e.clientX - r.left) / r.width * v.duration;
+});
+
+// ── 비디오 이벤트 ────────────────────────────────────────────
+vids.forEach((v, slot) => {
+  v.addEventListener('play',  () => { if (slot === activeSlot) document.getElementById('btnPlay').textContent = 'II'; });
+  v.addEventListener('pause', () => { if (slot === activeSlot) document.getElementById('btnPlay').textContent = '▶'; });
+  v.addEventListener('ended', () => { if (slot === activeSlot) onVideoEnded(); });
+  v.addEventListener('timeupdate', () => {
+    if (slot !== activeSlot || !v.duration) return;
+    document.getElementById('progressFill').style.width = (v.currentTime / v.duration * 100) + '%';
+    document.getElementById('timeDisp').textContent     = fmt(v.currentTime) + ' / ' + fmt(v.duration);
+    if (v.duration - v.currentTime <= PRELOAD_BEFORE) schedulePreload();
+  });
+});
+
+// ── 플레이리스트 렌더 ────────────────────────────────────────
+function renderPlaylist() {
+  const wrap = document.getElementById('plWrap');
+  if (!playlist.length) {
+    wrap.innerHTML = '<div class="pl-empty">영상을 추가하면 여기에 표시됩니다</div>';
+    return;
+  }
+
+  const normalNextIdx = nextByOrder();
+  let returnIdx = -1;
+  if (returnToNum !== null) {
+    const nexts = playlist.filter(p => p.num > returnToNum);
+    returnIdx   = nexts.length
+      ? playlist.findIndex(p => p.num === Math.min(...nexts.map(p => p.num)))
+      : 0;
+  }
+
+  wrap.innerHTML = playlist.map((item, i) => {
+    const isActive = i === currentIdx;
+    const isInsert = insertQueue === i;
+    const isReturn = returnIdx === i;
+    const isNext   = !isActive && !isInsert && !isReturn && insertQueue === null && i === normalNextIdx;
+
+    const cls   = isActive ? 'active' : isInsert ? 'insert-next' : isReturn ? 'return-after' : isNext ? 'next-up' : '';
+    const badge = isActive  ? '<span class="pl-badge badge-active">▶ NOW</span>'
+                : isInsert  ? '<span class="pl-badge badge-insert">⚡ 문의대응</span>'
+                : isReturn  ? '<span class="pl-badge badge-return">↩ 복귀</span>'
+                : isNext    ? '<span class="pl-badge badge-next">→ 다음</span>'
+                : '';
+
+    return `<div class="pl-item ${cls}" data-i="${i}">
+      <div class="pl-num">${isActive ? '▶' : String(item.num).padStart(2,'0')}</div>
+      <div class="pl-info">
+        <div class="pl-name" title="${esc(item.name)}">${esc(item.name)}${badge}</div>
+        <div class="pl-dur">${item.dur}</div>
+      </div>
+      <button class="pl-del" data-i="${i}">✕</button>
+    </div>`;
+  }).join('');
+
+  wrap.querySelectorAll('.pl-item').forEach(el => el.addEventListener('click', e => {
+    if (e.target.classList.contains('pl-del')) return;
+    returnToNum = null; insertQueue = null;
+    document.getElementById('insertBadge').style.display = 'none';
+    loadVideo(+el.dataset.i);
+  }));
+
+  wrap.querySelectorAll('.pl-del').forEach(btn => btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const i = +btn.dataset.i;
+    URL.revokeObjectURL(playlist[i].url);
+    playlist.splice(i, 1);
+    if (!playlist.length) {
+      currentIdx = -1;
+      vids.forEach(v => { v.pause(); v.src = ''; v.style.display = 'none'; });
+      controls.style.display   = 'none';
+      emptyState.style.display = 'flex';
+      document.getElementById('headerCount').textContent = '영상을 추가해주세요';
+    } else {
+      if (currentIdx >= playlist.length) currentIdx = playlist.length - 1;
+      if (i === currentIdx)    loadVideo(currentIdx);
+      else if (i < currentIdx) currentIdx--;
+    }
+    if (insertQueue !== null && insertQueue >= playlist.length) insertQueue = null;
+    updateHeaderCount(); renderPlaylist();
+  }));
+
+  const active = wrap.querySelector('.pl-item.active');
+  if (active) active.scrollIntoView({ block: 'nearest' });
+}
+
+// ── 키보드 ───────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  const v = av();
+  ({
+    Space:      () => { e.preventDefault(); document.getElementById('btnPlay').click(); },
+    ArrowRight: () => v.currentTime += 5,
+    ArrowLeft:  () => v.currentTime -= 5,
+    ArrowUp:    () => { v.volume = Math.min(1, v.volume + 0.1); document.getElementById('volSlider').value = v.volume; },
+    ArrowDown:  () => { v.volume = Math.max(0, v.volume - 0.1); document.getElementById('volSlider').value = v.volume; },
+    KeyN: () => document.getElementById('btnNext').click(),
+    KeyP: () => document.getElementById('btnPrev').click(),
+    KeyM: () => document.getElementById('btnMute').click(),
+    KeyF: () => document.getElementById('btnFS').click()
+  })[e.code]?.();
+});
+
+function fmt(s) { return (!s||isNaN(s)) ? '--:--' : Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0'); }
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>
