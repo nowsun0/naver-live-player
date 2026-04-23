@@ -313,7 +313,18 @@ function onVideoEnded() {
     returnToNum = playlist[currentIdx]?.num ?? -1;
     insertQueue = null;
     document.getElementById('insertBadge').style.display = 'none';
-    preloadedIdx === qIdx ? switchToStandby(qIdx) : loadVideo(qIdx);
+    // preload 여부 상관없이 standby에 로드 후 전환
+    if (preloadedIdx === qIdx) {
+      switchToStandby(qIdx);
+    } else {
+      // standby 슬롯에 즉시 로드 후 전환
+      sb().src = playlist[qIdx].url;
+      sb().load();
+      sb().addEventListener('canplay', function handler() {
+        sb().removeEventListener('canplay', handler);
+        switchToStandby(qIdx);
+      });
+    }
   } else if (returnToNum !== null) {
     const rn    = returnToNum;
     returnToNum = null;
@@ -321,11 +332,29 @@ function onVideoEnded() {
     const tIdx  = nexts.length
       ? playlist.findIndex(p => p.num === Math.min(...nexts.map(p => p.num)))
       : 0;
-    preloadedIdx === tIdx ? switchToStandby(tIdx) : loadVideo(tIdx);
+    if (preloadedIdx === tIdx) {
+      switchToStandby(tIdx);
+    } else {
+      sb().src = playlist[tIdx].url;
+      sb().load();
+      sb().addEventListener('canplay', function handler() {
+        sb().removeEventListener('canplay', handler);
+        switchToStandby(tIdx);
+      });
+    }
   } else {
     const next = nextByOrder();
     if (next === -1) return;
-    preloadedIdx === next ? switchToStandby(next) : loadVideo(next);
+    if (preloadedIdx === next) {
+      switchToStandby(next);
+    } else {
+      sb().src = playlist[next].url;
+      sb().load();
+      sb().addEventListener('canplay', function handler() {
+        sb().removeEventListener('canplay', handler);
+        switchToStandby(next);
+      });
+    }
   }
 }
 
