@@ -116,7 +116,7 @@
   <div class="sidebar">
     <div class="sidebar-header">
       <div class="sidebar-title">플레이리스트</div>
-      <div class="sidebar-badge" id="plCount">0곡</div>
+      <div class="sidebar-badge" id="plCount">0개</div>
     </div>
     <div class="pl-wrap" id="plWrap"><div class="pl-empty">영상을 추가하면 여기에 표시됩니다</div></div>
     <div class="legend">
@@ -127,6 +127,7 @@
     </div>
     <div class="sidebar-footer">
       <button class="add-btn" id="addBtn">＋ 영상 추가</button>
+      <button class="add-btn" id="clearBtn" style="background:rgba(255,77,106,.08);border-color:#ff4d6a;color:#ff4d6a">✕ 전체 삭제</button>
     </div>
     <div class="kw-bar">키워드 <b id="kwCount">0</b>개</div>
   </div>
@@ -250,7 +251,7 @@ function addFiles(files) {
 
 function updateHeaderCount() {
   document.getElementById('headerCount').textContent = playlist.length + '개 영상';
-  document.getElementById('plCount').textContent     = playlist.length + '곡';
+  document.getElementById('plCount').textContent     = playlist.length + '';
 }
 
 // ── 더블 버퍼 ────────────────────────────────────────────────
