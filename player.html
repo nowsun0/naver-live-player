@@ -227,7 +227,6 @@ document.getElementById('addBtn').addEventListener('click', openFiles);
 document.getElementById('dropZone').addEventListener('click', openFiles);
 document.getElementById('clearBtn').addEventListener('click', () => {
   if (!playlist.length) return;
-  if (!confirm('영상 목록을 전체 삭제할까요?')) return;
   playlist.forEach(p => URL.revokeObjectURL(p.url));
   playlist.length = 0;
   currentIdx   = -1;
@@ -238,10 +237,10 @@ document.getElementById('clearBtn').addEventListener('click', () => {
   controls.style.display   = 'none';
   emptyState.style.display = 'flex';
   document.getElementById('headerCount').textContent = '영상을 추가해주세요';
-  document.getElementById('plCount').textContent     = '0곡';
+  document.getElementById('plCount').textContent     = '0';
   document.getElementById('insertBadge').style.display = 'none';
   renderPlaylist();
-});  
+});
 document.addEventListener('dragover', e => { e.preventDefault(); document.getElementById('dropZone').classList.add('drag-over'); });
 document.addEventListener('dragleave', e => { if (!e.relatedTarget) document.getElementById('dropZone').classList.remove('drag-over'); });
 document.addEventListener('drop', e => {
