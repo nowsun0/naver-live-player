@@ -329,9 +329,8 @@ function schedulePreload() {
 function nextByListOrder() {
   if (!playlist.length) return -1;
   if (currentIdx === -1) {
-    // 첫 자동재생: 첫 번째 숫자 시작 영상
     const firstAuto = playlist.findIndex(p => /^\d/.test(p.name));
-    return firstAuto;
+    return firstAuto !== -1 ? firstAuto : 0;
   }
   // 현재 인덱스 이후의 숫자 시작 영상
   for (let i = currentIdx + 1; i < playlist.length; i++) {
