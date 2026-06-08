@@ -56,6 +56,11 @@
     .pl-item.insert-next .pl-num{color:var(--warn)}
     .pl-item.return-after{background:rgba(61,126,255,.07);border-left-color:var(--accent2);padding-left:11px}
     .pl-item.return-after .pl-num{color:var(--accent2)}
+    .pl-item.dragging{opacity:0.4;background:var(--surface2)}
+    .pl-item.drag-over-top{border-top:2px solid var(--accent);padding-top:7px}
+    .pl-item.drag-over-bottom{border-bottom:2px solid var(--accent);padding-bottom:7px}
+    .pl-drag{color:var(--muted);cursor:grab;font-size:12px;padding:0 4px;user-select:none;flex-shrink:0}
+    .pl-drag:active{cursor:grabbing}
     .pl-num{font-family:monospace;font-size:10px;color:var(--muted);min-width:22px;text-align:center}
     .pl-info{flex:1;overflow:hidden;min-width:0}
     .pl-name{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:color .12s}
@@ -455,7 +460,8 @@ function renderPlaylist() {
                 : isNext    ? '<span class="pl-badge badge-next">→ 다음</span>'
                 : '';
 
-    return `<div class="pl-item ${cls}" data-i="${i}">
+    return `<div class="pl-item ${cls}" data-i="${i}" draggable="true">
+      <div class="pl-drag" title="드래그하여 순서 변경">⋮⋮</div>
       <div class="pl-num">${isActive ? '▶' : String(i + 1).padStart(2,'0')}</div>
       <div class="pl-info">
         <div class="pl-name" title="${esc(item.name)}">${esc(item.name)}${badge}</div>
@@ -471,7 +477,7 @@ function renderPlaylist() {
 
   // 항목 클릭 → 재생
   wrap.querySelectorAll('.pl-item').forEach(el => el.addEventListener('click', e => {
-    if (e.target.closest('.pl-actions')) return;
+    if (e.target.closest('.pl-actions') || e.target.closest('.pl-drag')) return;
     returnToNum = null; insertQueue = null;
     document.getElementById('insertBadge').style.display = 'none';
     loadVideo(+el.dataset.i);
@@ -486,22 +492,16 @@ function renderPlaylist() {
     const targetIdx = action === 'up' ? i - 1 : i + 1;
     if (targetIdx < 0 || targetIdx >= playlist.length) return;
 
-    // 배열 swap
     [playlist[i], playlist[targetIdx]] = [playlist[targetIdx], playlist[i]];
 
-    // 인덱스 추적 변수들 swap
     if (currentIdx === i) currentIdx = targetIdx;
     else if (currentIdx === targetIdx) currentIdx = i;
-
     if (insertQueue === i) insertQueue = targetIdx;
     else if (insertQueue === targetIdx) insertQueue = i;
-
     if (returnToNum === i) returnToNum = targetIdx;
     else if (returnToNum === targetIdx) returnToNum = i;
 
-    // preload 무효화 (다음 영상이 바뀌었을 수 있으므로)
     preloadedIdx = -1;
-
     renderPlaylist();
     schedulePreload();
   }));
@@ -526,6 +526,75 @@ function renderPlaylist() {
     if (insertQueue !== null && insertQueue >= playlist.length) insertQueue = null;
     updateHeaderCount(); renderPlaylist();
   }));
+
+  // 드래그 앤 드롭으로 순서 변경
+  let dragSrcIdx = null;
+
+  wrap.querySelectorAll('.pl-item').forEach(el => {
+    el.addEventListener('dragstart', e => {
+      dragSrcIdx = +el.dataset.i;
+      el.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', String(dragSrcIdx));
+    });
+
+    el.addEventListener('dragend', () => {
+      el.classList.remove('dragging');
+      wrap.querySelectorAll('.pl-item').forEach(it => {
+        it.classList.remove('drag-over-top', 'drag-over-bottom');
+      });
+      dragSrcIdx = null;
+    });
+
+    el.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const rect = el.getBoundingClientRect();
+      const isTop = e.clientY < rect.top + rect.height / 2;
+      el.classList.toggle('drag-over-top', isTop);
+      el.classList.toggle('drag-over-bottom', !isTop);
+    });
+
+    el.addEventListener('dragleave', () => {
+      el.classList.remove('drag-over-top', 'drag-over-bottom');
+    });
+
+    el.addEventListener('drop', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (dragSrcIdx === null) return;
+      const targetIdx = +el.dataset.i;
+      if (dragSrcIdx === targetIdx) return;
+
+      const rect = el.getBoundingClientRect();
+      const isTop = e.clientY < rect.top + rect.height / 2;
+      let insertAt = isTop ? targetIdx : targetIdx + 1;
+      if (dragSrcIdx < insertAt) insertAt--;
+
+      const moved = playlist.splice(dragSrcIdx, 1)[0];
+      playlist.splice(insertAt, 0, moved);
+
+      const fixIdx = (idx) => {
+        if (idx === null || idx === -1) return idx;
+        if (idx === dragSrcIdx) return insertAt;
+        if (dragSrcIdx < idx && insertAt >= idx) return idx - 1;
+        if (dragSrcIdx > idx && insertAt <= idx) return idx + 1;
+        return idx;
+      };
+
+      currentIdx  = fixIdx(currentIdx);
+      insertQueue = fixIdx(insertQueue);
+      returnToNum = fixIdx(returnToNum);
+
+      preloadedIdx = -1;
+      renderPlaylist();
+      schedulePreload();
+    });
+  });
+
+  const active = wrap.querySelector('.pl-item.active');
+  if (active) active.scrollIntoView({ block: 'nearest' });
+}
 
   const active = wrap.querySelector('.pl-item.active');
   if (active) active.scrollIntoView({ block: 'nearest' });
