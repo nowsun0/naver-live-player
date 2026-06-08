@@ -356,8 +356,19 @@ function onVideoEnded() {
       });
     }
   } else if (returnToNum !== null) {
-    const tIdx  = (returnToNum + 1) % playlist.length;
+  // 복귀 시점에서 숫자로 시작하는 다음 영상 찾기
+    let tIdx = -1;
+    for (let i = returnToNum + 1; i < playlist.length; i++) {
+      if (/^\d/.test(playlist[i].name)) { tIdx = i; break; }
+    }
+    if (tIdx === -1) {
+      for (let i = 0; i <= returnToNum; i++) {
+        if (/^\d/.test(playlist[i].name)) { tIdx = i; break; }
+      }
+    }
     returnToNum = null;
+    if (tIdx === -1) return;
+  
     if (preloadedIdx === tIdx) {
       switchToStandby(tIdx);
     } else {
@@ -366,19 +377,6 @@ function onVideoEnded() {
       sb().addEventListener('canplay', function handler() {
         sb().removeEventListener('canplay', handler);
         switchToStandby(tIdx);
-      });
-    }
-  } else {
-    const next = nextByListOrder();
-    if (next === -1) return;
-    if (preloadedIdx === next) {
-      switchToStandby(next);
-    } else {
-      sb().src = playlist[next].url;
-      sb().load();
-      sb().addEventListener('canplay', function handler() {
-        sb().removeEventListener('canplay', handler);
-        switchToStandby(next);
       });
     }
   }
