@@ -43,7 +43,7 @@
     .pl-wrap::-webkit-scrollbar{width:3px}
     .pl-wrap::-webkit-scrollbar-thumb{background:var(--border)}
     .pl-empty{padding:28px 16px;text-align:center;color:var(--muted);font-size:11px;line-height:1.8}
-    .pl-item{display:flex;align-items:center;gap:9px;padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .12s;border-left:3px solid transparent}
+    .pl-item{display:flex;align-items:center;gap:6px;padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .12s;border-left:3px solid transparent}
     .pl-item:hover{background:var(--surface2)}
     .pl-item.active{background:rgba(0,229,160,.10);border-left-color:var(--accent);padding-left:11px}
     .pl-item.active .pl-num{color:var(--accent);font-weight:700}
@@ -54,8 +54,12 @@
     .pl-item.insert-next .pl-num{color:var(--warn)}
     .pl-item.return-after{background:rgba(61,126,255,.07);border-left-color:var(--accent2);padding-left:11px}
     .pl-item.return-after .pl-num{color:var(--accent2)}
+    .pl-item.kw-only{opacity:0.65}
+    .pl-item.dragging{opacity:0.4;background:var(--surface2)}
+    .pl-item.drag-over-top{border-top:2px solid var(--accent);padding-top:7px}
+    .pl-item.drag-over-bottom{border-bottom:2px solid var(--accent);padding-bottom:7px}
     .pl-num{font-family:monospace;font-size:10px;color:var(--muted);min-width:22px;text-align:center}
-    .pl-info{flex:1;overflow:hidden}
+    .pl-info{flex:1;overflow:hidden;min-width:0}
     .pl-name{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:color .12s}
     .pl-dur{font-size:10px;color:var(--muted);margin-top:2px;font-family:monospace}
     .pl-badge{font-size:9px;font-weight:700;margin-left:4px;padding:1px 4px;border-radius:3px}
@@ -63,8 +67,14 @@
     .badge-next{background:rgba(167,139,250,.15);color:var(--next)}
     .badge-insert{background:rgba(255,179,71,.15);color:var(--warn)}
     .badge-return{background:rgba(61,126,255,.15);color:var(--accent2)}
-    .pl-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;padding:3px 6px;border-radius:3px;opacity:0;flex-shrink:0}
-    .pl-item:hover .pl-del{opacity:1}
+    .pl-drag{color:var(--muted);cursor:grab;font-size:12px;padding:0 4px;user-select:none;flex-shrink:0}
+    .pl-drag:active{cursor:grabbing}
+    .pl-actions{display:flex;gap:2px;flex-shrink:0;opacity:0;transition:opacity .15s}
+    .pl-item:hover .pl-actions{opacity:1}
+    .pl-move{background:none;border:none;color:var(--muted);cursor:pointer;font-size:10px;padding:2px 4px;border-radius:3px;line-height:1}
+    .pl-move:hover:not(:disabled){background:var(--accent2);color:#fff}
+    .pl-move:disabled{opacity:0.2;cursor:not-allowed}
+    .pl-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;padding:2px 6px;border-radius:3px}
     .pl-del:hover{background:#ff4d6a;color:#fff}
     .legend{padding:7px 12px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0}
     .lg{display:flex;align-items:center;gap:3px;font-size:9px;color:var(--muted)}
@@ -116,7 +126,7 @@
   <div class="sidebar">
     <div class="sidebar-header">
       <div class="sidebar-title">플레이리스트</div>
-      <div class="sidebar-badge" id="plCount">0곡</div>
+      <div class="sidebar-badge" id="plCount">0</div>
     </div>
     <div class="pl-wrap" id="plWrap"><div class="pl-empty">영상을 추가하면 여기에 표시됩니다</div></div>
     <div class="legend">
@@ -127,6 +137,7 @@
     </div>
     <div class="sidebar-footer">
       <button class="add-btn" id="addBtn">＋ 영상 추가</button>
+      <button class="add-btn" id="clearBtn" style="background:rgba(255,77,106,.08);border-color:#ff4d6a;color:#ff4d6a">✕ 전체 삭제</button>
     </div>
     <div class="kw-bar">키워드 <b id="kwCount">0</b>개</div>
   </div>
@@ -136,15 +147,21 @@
 const playlist   = [];
 let currentIdx   = -1;
 let insertQueue  = null;
-let returnToNum  = null;
+let returnToNum  = null;  // 끼워넣기 직전 currentIdx
 let activeSlot   = 0;
 let preloadedIdx = -1;
 let keywordMap   = [];
-// 대기 슬롯이 실제로 재생 가능한 상태인지. load() 요청만으로는 true 가 되지 않는다.
-let preloadedReady = false;
 const PRELOAD_BEFORE = 8;
 
-// ── 재생 감시 (검은 화면 자가복구) ───────────────────────────
+// 대기 슬롯이 실제로 재생 가능한 상태인지. load() 요청만으로는 true 가 되지 않는다.
+let preloadedReady = false;
+
+// 대기 슬롯 로드를 기다리는 최대 시간. canplay 가 끝내 오지 않는 경우의 안전장치.
+const STANDBY_WAIT_MS = 6000;
+let standbyWaitTimer   = null;
+let standbyWaitCleanup = null;
+
+// ── 재생 감시 (검은 화면 / 멈춤 자가복구) ────────────────────
 const STALL_CHECK_MS = 2000;   // 감시 주기
 const STALL_STRIKES  = 2;      // 연속 몇 회 멈춰 있으면 복구할지
 let stallLastTime = -1;
@@ -165,41 +182,31 @@ function releaseSlot(v) {
   v.load();
 }
 
-// ── 사이드패널 origin (manifest.json 의 key 로 확장 ID 가 고정되어 있음) ──
-const SIDEPANEL_ORIGIN = 'chrome-extension://pigdjjjlnjdggcnppkpneclagohjlmkf';
+// ── 자동재생 영상 판별 ───────────────────────────────────────
+// 파일명이 숫자로 시작하면 자동재생, 그 외 (kw_ 등)는 키워드 전용
+function isAutoPlay(name) {
+  return /^\d/.test(name);
+}
 
-// ── postMessage 수신 (sidepanel → player) ────────────────────
+// ── postMessage 수신 ────────────────────────────────────────
 window.addEventListener('message', (e) => {
   const msg = e.data;
   if (!msg || !msg.type) return;
 
   switch (msg.type) {
     case 'INIT':
-      // 플레이어 초기화 시 키워드 수신 — 사이드패널이 보낸 것만 받는다
-      if (e.origin !== SIDEPANEL_ORIGIN) return;
-      if (Array.isArray(msg.keywordMap)) {
-        keywordMap = msg.keywordMap;
-        updateKwInfo();
-      }
-      break;
-
     case 'KEYWORD_UPDATE':
-      // 키워드 추가/삭제/CSV 로드 시 업데이트 — 사이드패널이 보낸 것만 받는다
-      if (e.origin !== SIDEPANEL_ORIGIN) return;
       if (Array.isArray(msg.keywordMap)) {
         keywordMap = msg.keywordMap;
         updateKwInfo();
       }
       break;
-
     case 'CHAT':
-      // content script에서 온 채팅 → 키워드 매칭
       if (msg.text) checkKeyword(msg.text);
       break;
   }
 });
 
-// ── 로드 완료 → sidepanel에 PLAYER_READY 알림 ────────────────
 window.addEventListener('load', () => {
   if (window.opener) {
     try { window.opener.postMessage({ type: 'PLAYER_READY' }, '*'); } catch(e) {}
@@ -230,7 +237,6 @@ function checkKeyword(text) {
 }
 
 // ── 파일 열기 ────────────────────────────────────────────────
-// blob URL로 열린 일반 창이므로 input[type=file] 정상 동작
 function openFiles() {
   const inp = document.createElement('input');
   inp.type = 'file'; inp.accept = 'video/*'; inp.multiple = true;
@@ -245,6 +251,28 @@ function openFiles() {
 
 document.getElementById('addBtn').addEventListener('click', openFiles);
 document.getElementById('dropZone').addEventListener('click', openFiles);
+
+// 전체 삭제
+document.getElementById('clearBtn').addEventListener('click', () => {
+  if (!playlist.length) return;
+  playlist.forEach(p => URL.revokeObjectURL(p.url));
+  playlist.length = 0;
+  currentIdx   = -1;
+  insertQueue  = null;
+  returnToNum  = null;
+  preloadedIdx   = -1;
+  preloadedReady = false;
+  cancelStandbyWait();
+  resetStallWatch();
+  vids.forEach(v => { v.pause(); releaseSlot(v); v.style.display = 'none'; });
+  controls.style.display   = 'none';
+  emptyState.style.display = 'flex';
+  document.getElementById('headerCount').textContent = '영상을 추가해주세요';
+  document.getElementById('plCount').textContent     = '0';
+  document.getElementById('insertBadge').style.display = 'none';
+  renderPlaylist();
+});
+
 document.addEventListener('dragover', e => { e.preventDefault(); document.getElementById('dropZone').classList.add('drag-over'); });
 document.addEventListener('dragleave', e => { if (!e.relatedTarget) document.getElementById('dropZone').classList.remove('drag-over'); });
 document.addEventListener('drop', e => {
@@ -259,26 +287,36 @@ function addFiles(files) {
   );
   if (!valid.length) { alert('지원하지 않는 파일입니다.'); return; }
   valid.forEach(f => {
-    const m   = f.name.match(/(\d+)/);
+    const m   = f.name.match(/^(\d+)/);
     const num = m ? parseInt(m[1]) : 9999 + playlist.length;
     playlist.push({ name: f.name, url: URL.createObjectURL(f), dur: '--:--', num });
   });
-  playlist.sort((a, b) => a.num - b.num);
+  // 자동재생 영상은 숫자 순, 키워드 전용은 뒤에
+  playlist.sort((a, b) => {
+    const aAuto = isAutoPlay(a.name);
+    const bAuto = isAutoPlay(b.name);
+    if (aAuto && !bAuto) return -1;
+    if (!aAuto && bAuto) return 1;
+    return a.num - b.num;
+  });
   updateHeaderCount();
   renderPlaylist();
-  if (currentIdx === -1) loadVideo(0);
+  if (currentIdx === -1) {
+    const firstAuto = playlist.findIndex(p => isAutoPlay(p.name));
+    if (firstAuto !== -1) loadVideo(firstAuto);
+  }
 }
 
 function updateHeaderCount() {
   document.getElementById('headerCount').textContent = playlist.length + '개 영상';
-  document.getElementById('plCount').textContent     = playlist.length + '곡';
+  document.getElementById('plCount').textContent     = playlist.length + '';
 }
 
 // ── 더블 버퍼 ────────────────────────────────────────────────
 function preloadStandby(idx) {
   if (idx === -1 || idx === preloadedIdx || !playlist[idx]) return;
   preloadedIdx   = idx;
-  preloadedReady = false;   // canplay 이벤트가 올 때까지 전환을 막는다
+  preloadedReady = false;   // canplay 가 올 때까지 전환을 막는다
   sb().src = playlist[idx].url;
   sb().load();
 }
@@ -287,10 +325,11 @@ function switchToStandby(newIdx) {
   // 대기 버퍼가 아직 재생 가능하지 않으면 전환하지 않는다.
   // 그냥 넘기면 readyState=0 인 슬롯이 활성이 되어 검은 화면이 된다.
   if (!preloadedReady || sb().readyState < 3) {
-    console.warn('[전환 보류] 대기 버퍼 미준비(readyState=' + sb().readyState + ') → 정식 로드로 전환');
-    loadVideo(newIdx);
+    console.warn('[전환 보류] 대기 버퍼 미준비(readyState=' + sb().readyState + ') → 로드 완료 후 전환');
+    loadIntoStandby(newIdx);
     return;
   }
+  cancelStandbyWait();
   const prev = av();
   activeSlot ^= 1;
   currentIdx  = newIdx;
@@ -307,6 +346,7 @@ function switchToStandby(newIdx) {
 
 function loadVideo(idx) {
   if (idx < 0 || idx >= playlist.length) return;
+  cancelStandbyWait();
   currentIdx = idx;
   emptyState.style.display = 'none';
   controls.style.display   = 'flex';
@@ -325,40 +365,113 @@ function loadVideo(idx) {
 }
 
 function schedulePreload() {
-  const nextIdx = insertQueue !== null ? insertQueue : nextByOrder();
+  const nextIdx = insertQueue !== null ? insertQueue : nextByListOrder();
   if (nextIdx !== -1) preloadStandby(nextIdx);
 }
 
-function nextByOrder() {
+// ── 다음 자동재생 영상 찾기 (숫자로 시작하는 영상만) ──────────
+function nextByListOrder() {
   if (!playlist.length) return -1;
-  const curNum = playlist[currentIdx]?.num ?? -1;
-  const nexts  = playlist.filter(p => p.num > curNum);
-  if (nexts.length) {
-    const minNum = Math.min(...nexts.map(p => p.num));
-    return playlist.findIndex(p => p.num === minNum);
+  if (currentIdx === -1) {
+    const firstAuto = playlist.findIndex(p => isAutoPlay(p.name));
+    return firstAuto !== -1 ? firstAuto : -1;
   }
-  return 0;
+  // 현재 인덱스 이후의 자동재생 영상
+  for (let i = currentIdx + 1; i < playlist.length; i++) {
+    if (isAutoPlay(playlist[i].name)) return i;
+  }
+  // 끝까지 없으면 처음부터 다시
+  for (let i = 0; i < currentIdx; i++) {
+    if (isAutoPlay(playlist[i].name)) return i;
+  }
+  return -1;
 }
 
 function onVideoEnded() {
   if (insertQueue !== null) {
+    // 키워드 끼워넣기 영상 재생
     const qIdx  = insertQueue;
-    returnToNum = playlist[currentIdx]?.num ?? -1;
+    returnToNum = currentIdx;
     insertQueue = null;
     document.getElementById('insertBadge').style.display = 'none';
-    preloadedIdx === qIdx ? switchToStandby(qIdx) : loadVideo(qIdx);
+    playLoaded(qIdx);
   } else if (returnToNum !== null) {
-    const rn    = returnToNum;
+    // 끼워넣기 끝남 → 직전 영상의 다음 자동재생 영상으로 복귀
+    let tIdx = -1;
+    for (let i = returnToNum + 1; i < playlist.length; i++) {
+      if (isAutoPlay(playlist[i].name)) { tIdx = i; break; }
+    }
+    if (tIdx === -1) {
+      for (let i = 0; i <= returnToNum; i++) {
+        if (isAutoPlay(playlist[i].name)) { tIdx = i; break; }
+      }
+    }
     returnToNum = null;
-    const nexts = playlist.filter(p => p.num > rn);
-    const tIdx  = nexts.length
-      ? playlist.findIndex(p => p.num === Math.min(...nexts.map(p => p.num)))
-      : 0;
-    preloadedIdx === tIdx ? switchToStandby(tIdx) : loadVideo(tIdx);
+    if (tIdx === -1) return;
+    playLoaded(tIdx);
   } else {
-    const next = nextByOrder();
+    // 일반 자동재생: 다음 자동재생 영상
+    const next = nextByListOrder();
     if (next === -1) return;
-    preloadedIdx === next ? switchToStandby(next) : loadVideo(next);
+    playLoaded(next);
+  }
+}
+
+// 대기 중이던 canplay 감시를 정리한다 (리스너·타이머 누수 방지)
+function cancelStandbyWait() {
+  if (standbyWaitTimer)   { clearTimeout(standbyWaitTimer); standbyWaitTimer = null; }
+  if (standbyWaitCleanup) { standbyWaitCleanup(); standbyWaitCleanup = null; }
+}
+
+// 대기 슬롯에 로드하고, 재생 가능해지면 전환한다.
+// canplay 가 끝내 오지 않거나(디코드 실패) error 가 나면 다음 영상으로 건너뛴다.
+function loadIntoStandby(idx) {
+  cancelStandbyWait();
+  const v = sb();
+  // 같은 파일을 다시 load() 하면 진행 중이던 버퍼링이 처음부터 다시 시작된다
+  if (v.src !== playlist[idx].url) {
+    v.src = playlist[idx].url;
+    v.load();
+  }
+  preloadedIdx   = idx;
+  preloadedReady = false;
+
+  function cleanup() {
+    v.removeEventListener('canplay', onReady);
+    v.removeEventListener('error',   onFail);
+    if (standbyWaitTimer) { clearTimeout(standbyWaitTimer); standbyWaitTimer = null; }
+    standbyWaitCleanup = null;
+  }
+  function onReady() {
+    cleanup();
+    preloadedReady = true;
+    switchToStandby(idx);
+  }
+  function onFail() {
+    cleanup();
+    console.warn('[로드 실패]', playlist[idx] ? playlist[idx].name : idx, '→ 다음 영상으로 건너뜀');
+    preloadedIdx   = -1;
+    preloadedReady = false;
+    let nx = -1;
+    for (let i = idx + 1; i < playlist.length; i++) if (isAutoPlay(playlist[i].name)) { nx = i; break; }
+    if (nx === -1) for (let i = 0; i < idx; i++)     if (isAutoPlay(playlist[i].name)) { nx = i; break; }
+    if (nx !== -1 && nx !== idx) loadVideo(nx);
+  }
+
+  standbyWaitCleanup = cleanup;
+  v.addEventListener('canplay', onReady);
+  v.addEventListener('error',   onFail);
+  standbyWaitTimer = setTimeout(() => {
+    if (v.readyState >= 3) onReady(); else onFail();
+  }, STANDBY_WAIT_MS);
+}
+
+// 프리로드가 실제로 끝났으면 즉시 전환, 아니면 로드 완료를 기다린 뒤 전환
+function playLoaded(idx) {
+  if (preloadedIdx === idx && preloadedReady && sb().readyState >= 3) {
+    switchToStandby(idx);
+  } else {
+    loadIntoStandby(idx);
   }
 }
 
@@ -372,13 +485,13 @@ document.getElementById('btnPlay').addEventListener('click', () => {
   }
 });
 document.getElementById('btnPrev').addEventListener('click', () => {
-  const curNum = playlist[currentIdx]?.num ?? 9999;
-  const prevs  = playlist.filter(p => p.num < curNum);
-  if (!prevs.length) return;
-  loadVideo(playlist.findIndex(p => p.num === Math.max(...prevs.map(p => p.num))));
+  if (currentIdx <= 0) return;
+  loadVideo(currentIdx - 1);
 });
 document.getElementById('btnNext').addEventListener('click', () => {
-  returnToNum = null; onVideoEnded();
+  returnToNum = null;
+  const next = nextByListOrder();
+  if (next !== -1) loadVideo(next);
 });
 document.getElementById('btnMute').addEventListener('click', () => {
   vids.forEach(v => v.muted = !av().muted);
@@ -465,13 +578,17 @@ function renderPlaylist() {
     return;
   }
 
-  const normalNextIdx = nextByOrder();
+  const normalNextIdx = nextByListOrder();
   let returnIdx = -1;
   if (returnToNum !== null) {
-    const nexts = playlist.filter(p => p.num > returnToNum);
-    returnIdx   = nexts.length
-      ? playlist.findIndex(p => p.num === Math.min(...nexts.map(p => p.num)))
-      : 0;
+    for (let i = returnToNum + 1; i < playlist.length; i++) {
+      if (isAutoPlay(playlist[i].name)) { returnIdx = i; break; }
+    }
+    if (returnIdx === -1) {
+      for (let i = 0; i <= returnToNum; i++) {
+        if (isAutoPlay(playlist[i].name)) { returnIdx = i; break; }
+      }
+    }
   }
 
   wrap.innerHTML = playlist.map((item, i) => {
@@ -479,38 +596,71 @@ function renderPlaylist() {
     const isInsert = insertQueue === i;
     const isReturn = returnIdx === i;
     const isNext   = !isActive && !isInsert && !isReturn && insertQueue === null && i === normalNextIdx;
+    const isKwOnly = !isAutoPlay(item.name);
 
-    const cls   = isActive ? 'active' : isInsert ? 'insert-next' : isReturn ? 'return-after' : isNext ? 'next-up' : '';
+    const cls = (isActive ? 'active' : isInsert ? 'insert-next' : isReturn ? 'return-after' : isNext ? 'next-up' : '') +
+                (isKwOnly && !isActive && !isInsert && !isReturn ? ' kw-only' : '');
     const badge = isActive  ? '<span class="pl-badge badge-active">▶ NOW</span>'
                 : isInsert  ? '<span class="pl-badge badge-insert">⚡ 문의대응</span>'
                 : isReturn  ? '<span class="pl-badge badge-return">↩ 복귀</span>'
                 : isNext    ? '<span class="pl-badge badge-next">→ 다음</span>'
                 : '';
 
-    return `<div class="pl-item ${cls}" data-i="${i}">
-      <div class="pl-num">${isActive ? '▶' : String(item.num).padStart(2,'0')}</div>
+    return `<div class="pl-item ${cls}" data-i="${i}" draggable="true">
+      <div class="pl-drag" title="드래그하여 순서 변경">⋮⋮</div>
+      <div class="pl-num">${isActive ? '▶' : String(i + 1).padStart(2,'0')}</div>
       <div class="pl-info">
         <div class="pl-name" title="${esc(item.name)}">${esc(item.name)}${badge}</div>
         <div class="pl-dur">${item.dur}</div>
       </div>
-      <button class="pl-del" data-i="${i}">✕</button>
+      <div class="pl-actions">
+        <button class="pl-move" data-action="up" data-i="${i}" ${i === 0 ? 'disabled' : ''} title="위로">▲</button>
+        <button class="pl-move" data-action="down" data-i="${i}" ${i === playlist.length - 1 ? 'disabled' : ''} title="아래로">▼</button>
+        <button class="pl-del" data-i="${i}" title="삭제">✕</button>
+      </div>
     </div>`;
   }).join('');
 
+  // 항목 클릭 → 재생
   wrap.querySelectorAll('.pl-item').forEach(el => el.addEventListener('click', e => {
-    if (e.target.classList.contains('pl-del')) return;
+    if (e.target.closest('.pl-actions') || e.target.closest('.pl-drag')) return;
     returnToNum = null; insertQueue = null;
     document.getElementById('insertBadge').style.display = 'none';
     loadVideo(+el.dataset.i);
   }));
 
+  // 위/아래 이동 버튼
+  wrap.querySelectorAll('.pl-move').forEach(btn => btn.addEventListener('click', e => {
+    e.stopPropagation();
+    if (btn.disabled) return;
+    const i = +btn.dataset.i;
+    const action = btn.dataset.action;
+    const targetIdx = action === 'up' ? i - 1 : i + 1;
+    if (targetIdx < 0 || targetIdx >= playlist.length) return;
+    [playlist[i], playlist[targetIdx]] = [playlist[targetIdx], playlist[i]];
+    if (currentIdx === i) currentIdx = targetIdx;
+    else if (currentIdx === targetIdx) currentIdx = i;
+    if (insertQueue === i) insertQueue = targetIdx;
+    else if (insertQueue === targetIdx) insertQueue = i;
+    if (returnToNum === i) returnToNum = targetIdx;
+    else if (returnToNum === targetIdx) returnToNum = i;
+    preloadedIdx = -1;
+    renderPlaylist();
+    schedulePreload();
+  }));
+
+  // 개별 삭제
   wrap.querySelectorAll('.pl-del').forEach(btn => btn.addEventListener('click', e => {
     e.stopPropagation();
     const i = +btn.dataset.i;
     URL.revokeObjectURL(playlist[i].url);
     playlist.splice(i, 1);
     if (!playlist.length) {
-      currentIdx = -1;
+      currentIdx     = -1;
+      preloadedIdx   = -1;
+      preloadedReady = false;
+      cancelStandbyWait();
+      resetStallWatch();
       vids.forEach(v => { v.pause(); releaseSlot(v); v.style.display = 'none'; });
       controls.style.display   = 'none';
       emptyState.style.display = 'flex';
@@ -523,6 +673,61 @@ function renderPlaylist() {
     if (insertQueue !== null && insertQueue >= playlist.length) insertQueue = null;
     updateHeaderCount(); renderPlaylist();
   }));
+
+  // 드래그 앤 드롭
+  let dragSrcIdx = null;
+  wrap.querySelectorAll('.pl-item').forEach(el => {
+    el.addEventListener('dragstart', e => {
+      dragSrcIdx = +el.dataset.i;
+      el.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', String(dragSrcIdx));
+    });
+    el.addEventListener('dragend', () => {
+      el.classList.remove('dragging');
+      wrap.querySelectorAll('.pl-item').forEach(it => {
+        it.classList.remove('drag-over-top', 'drag-over-bottom');
+      });
+      dragSrcIdx = null;
+    });
+    el.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const rect = el.getBoundingClientRect();
+      const isTop = e.clientY < rect.top + rect.height / 2;
+      el.classList.toggle('drag-over-top', isTop);
+      el.classList.toggle('drag-over-bottom', !isTop);
+    });
+    el.addEventListener('dragleave', () => {
+      el.classList.remove('drag-over-top', 'drag-over-bottom');
+    });
+    el.addEventListener('drop', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (dragSrcIdx === null) return;
+      const targetIdx = +el.dataset.i;
+      if (dragSrcIdx === targetIdx) return;
+      const rect = el.getBoundingClientRect();
+      const isTop = e.clientY < rect.top + rect.height / 2;
+      let insertAt = isTop ? targetIdx : targetIdx + 1;
+      if (dragSrcIdx < insertAt) insertAt--;
+      const moved = playlist.splice(dragSrcIdx, 1)[0];
+      playlist.splice(insertAt, 0, moved);
+      const fixIdx = (idx) => {
+        if (idx === null || idx === -1) return idx;
+        if (idx === dragSrcIdx) return insertAt;
+        if (dragSrcIdx < idx && insertAt >= idx) return idx - 1;
+        if (dragSrcIdx > idx && insertAt <= idx) return idx + 1;
+        return idx;
+      };
+      currentIdx  = fixIdx(currentIdx);
+      insertQueue = fixIdx(insertQueue);
+      returnToNum = fixIdx(returnToNum);
+      preloadedIdx = -1;
+      renderPlaylist();
+      schedulePreload();
+    });
+  });
 
   const active = wrap.querySelector('.pl-item.active');
   if (active) active.scrollIntoView({ block: 'nearest' });
